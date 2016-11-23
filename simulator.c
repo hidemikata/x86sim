@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void mod_rm_reg(unsigned char , unsigned char *,unsigned char *, unsigned char *);
+static void get_mod_rm_reg(unsigned char , unsigned char *,unsigned char *, unsigned char *);
 static unsigned char get_disp_length(unsigned char , unsigned char );
 static void print_out_registor(void);
 
@@ -60,19 +60,18 @@ static unsigned char fetch(unsigned char *mnemonic){
 
 	int eip = cpu_reg.sp_reg.eip;
 
-
 	/*1byte取り出し*/
 	code = *(main_memory + eip);
 	length++;//1byte取り出し分
 
 	//modrmとdispをとりだしを取り出し。
 	if (code == 0x89){
-		mod_rm_reg(*(main_memory + eip + 1), &MOD, &RM, &REG);//+1はRM/MOD
+		get_mod_rm_reg(*(main_memory + eip + 1), &MOD, &RM, &REG);//+1はRM/MOD
 		length++;//modrm分
 		disp_len = get_disp_length(MOD, RM);
 		length = length + disp_len;//disp_len分
 	} else if (code == 0x83){
-		mod_rm_reg(*(main_memory + eip + 1), &MOD, &RM, &REG);//+1はRM/MOD
+		get_mod_rm_reg(*(main_memory + eip + 1), &MOD, &RM, &REG);//+1はRM/MOD
 		length++;//modrm分
 		disp_len = get_disp_length(MOD, RM);
 		length = length + disp_len;//disp_len分
@@ -88,8 +87,7 @@ static unsigned char fetch(unsigned char *mnemonic){
 		length = 1;
 	}
 
-
-	//一気に移動したらエンディアン変換が必要かも。
+	/* メインメモリーからプログラムを取り出し */
 	memcpy(mnemonic, main_memory + eip, length);
 	
 	/*
@@ -183,7 +181,6 @@ static int *get_register_from_MOD_RM(unsigned char *mnemonic, unsigned char MOD,
 				break;
 			case 0x5://101
 				ret = (int*)(cpu_reg.g_reg.ebp + disp_8bit);
-//
 				break;
 			case 0x6://110
 				ret = (int*)(cpu_reg.g_reg.esi + disp_8bit);
@@ -298,7 +295,7 @@ static int get_register_from_REG(unsigned char REG){
 
 
 
-static void mod_rm_reg(unsigned char mod_opeland, unsigned char *MOD,
+static void get_mod_rm_reg(unsigned char mod_opeland, unsigned char *MOD,
 			unsigned char *RM, unsigned char *REG) {
 	*MOD = mod_opeland >> 6;
 	unsigned char RM_tmp = mod_opeland << 5;
@@ -334,7 +331,6 @@ static unsigned char get_disp_length(unsigned char MOD, unsigned char RM){
 }
 
 /*命令を解読する*/
-
 static void execute(unsigned char *mnemonic) {
 	unsigned char MOD;
 	unsigned char RM;
@@ -346,9 +342,9 @@ static void execute(unsigned char *mnemonic) {
 	unsigned char disp_len;
 
 	if (*mnemonic == 0x89) {
-		printf("add 89\n");
+		printf("mov 89\n");
 		//opecode1byte modrm1byte disp VARbyte
-		mod_rm_reg(*(mnemonic+1), &MOD, &RM, &REG);
+		get_mod_rm_reg(*(mnemonic+1), &MOD, &RM, &REG);
 
 		//REGは上書く側のレジスタ(後ろ) 足しこむ奴が入ってるやつの値
 		reg_register2 = get_register_from_REG(REG);
@@ -364,7 +360,7 @@ static void execute(unsigned char *mnemonic) {
 		printf("add 83\n");
 		//opecode1byte modrm1byte disp VARbyte
 		int immediate = 1;
-		mod_rm_reg(*(mnemonic+1), &MOD, &RM, &REG);
+		get_mod_rm_reg(*(mnemonic+1), &MOD, &RM, &REG);
 		if(MOD == 1){//0x01
 			immediate = *(mnemonic+3);
 		} else if (MOD == 2){//0x10
@@ -391,126 +387,56 @@ static void execute(unsigned char *mnemonic) {
 	}
 }
 
+static void print_mnemonic(unsigned char *mn){
+	int i;
+	printf("mne=");
+	for(i = 0; i < 15; i){
+		printf("%x,", mn[i]);
+		i++;
+	}
+	printf("\n");
+}
+
 /*実行*/
 static void simulator_run() {
 	/* ニーモニックの箱 */
 	unsigned char mnemonic[15] = {0};
-	unsigned char ope_length = 0;
-
-	memset(mnemonic, 0, 15);
-
-	/* フェッチ */
-	fetch(mnemonic);
 	int i;
-	for(i = 0; i < 15; i){
-		printf("mnemonic=%x\n", mnemonic[i]);
-		i++;
+	for (i = 0;i < 6; i++) {
+		getchar();
+		memset(mnemonic, 0, 15);
+		fetch(mnemonic);
+		print_mnemonic(mnemonic);
+		execute(mnemonic);
+		print_out_registor();
 	}
-	
-
-	/* デコード? */
-	execute(mnemonic);
-	print_out_registor();
-
-	/* 次の命令*/
-	printf("----\n");
-
-	memset(mnemonic, 0, 15);
-	/* フェッチ */
-	fetch(mnemonic);
-	for(i = 0; i < 15; i){
-		printf("mnemonic=%x\n", mnemonic[i]);
-		i++;
-	}
-	/* デコード? */
-	execute(mnemonic);
-	print_out_registor();
-
-
-
-
-
-
-
-	/* 次の命令*/
-	printf("----\n");
-	memset(mnemonic, 0, 15);
-	fetch(mnemonic);
-	for(i = 0; i < 15; i){
-		printf("mnemo%d(%x)", i, mnemonic[i]);
-		i++;
-	}
-	printf("\n");
-	execute(mnemonic);
-	print_out_registor();
-
-
-	/* 次の命令*/
-	printf("----\n");
-	memset(mnemonic, 0, 15);
-	fetch(mnemonic);
-	for(i = 0; i < 15; i){
-		printf("mnemo%d(%x)", i, mnemonic[i]);
-		i++;
-	}
-	printf("\n");
-	execute(mnemonic);
-	print_out_registor();
-
-
-	/* 次の命令*/
-	printf("----\n");
-	memset(mnemonic, 0, 15);
-	fetch(mnemonic);
-	for(i = 0; i < 15; i){
-		printf("mnemo%d(%x)", i, mnemonic[i]);
-		i++;
-	}
-	printf("\n");
-	execute(mnemonic);
-	print_out_registor();
-
-
-
-	/* 次の命令*/
-	printf("----\n");
-	memset(mnemonic, 0, 15);
-	fetch(mnemonic);
-	for(i = 0; i < 15; i){
-		printf("mnemo%d(%x)", i, mnemonic[i]);
-		i++;
-	}
-	printf("\n");
-	execute(mnemonic);
-	print_out_registor();
-
-
 
 }
 
 static void print_out_registor(){
-	printf("eax(%d)\n",cpu_reg.g_reg.eax);
-	printf("ecx(%d)\n",cpu_reg.g_reg.ecx);
-	printf("edx(%d)\n",cpu_reg.g_reg.edx);
-	printf("ebx(%d)\n",cpu_reg.g_reg.ebx);
-	printf("esp(%d)\n",cpu_reg.g_reg.esp);
-	printf("ebp(%d)\n",cpu_reg.g_reg.ebp);
-	printf("esi(%d)\n",cpu_reg.g_reg.esi);
-	printf("edi(%d)\n",cpu_reg.g_reg.edi);
-	printf("eip(%d)\n",cpu_reg.sp_reg.eip);
-	printf("eflags(%d)\n",cpu_reg.sp_reg.eflags);
+	printf("%d eax(%d)\n",&cpu_reg.g_reg.eax,cpu_reg.g_reg.eax);
+	printf("%d ecx(%d)\n",&cpu_reg.g_reg.ecx,cpu_reg.g_reg.ecx);
+	printf("%d edx(%d)\n",&cpu_reg.g_reg.edx,cpu_reg.g_reg.edx);
+	printf("%d ebx(%d)\n",&cpu_reg.g_reg.ebx,cpu_reg.g_reg.ebx);
+	printf("%d esp(%d)\n",&cpu_reg.g_reg.esp,cpu_reg.g_reg.esp);
+	printf("%d ebp(%d)\n",&cpu_reg.g_reg.ebp,cpu_reg.g_reg.ebp);
+	printf("%d esi(%d)\n",&cpu_reg.g_reg.esi,cpu_reg.g_reg.esi);
+	printf("%d edi(%d)\n",&cpu_reg.g_reg.edi,cpu_reg.g_reg.edi);
+	printf("%d eip(%d)\n",&cpu_reg.sp_reg.eip,cpu_reg.sp_reg.eip);
+	printf("%d eflags(%d)\n",&cpu_reg.sp_reg.eflags,cpu_reg.sp_reg.eflags);
+	printf("----\n");
 }
 
 int main() {
 	/*espを適当なところに設定 グローバル領域で代入できないのでしかたなくここでやる*/
 	cpu_reg.g_reg.esp = &main_memory_stack[1024];
-	printf("esp initial data%d\n", cpu_reg.g_reg.esp);
+	printf("esp initial data %d\n", cpu_reg.g_reg.esp);
 
 	FILE *fp;
-//	fp = fopen("func_sample.bin","rb");
 	fp = fopen("func.bin","rb");
 
-//	fread(main_memory,8,1,fp);
+	//ファイルfpからsizeバイトのデータをn個読み込み、bufに格納します。
+	//ファイル位置指示子を読み込んだデータバイト分進めます。
 	fread(main_memory,10,1,fp);
 	int i = 0;
 	for(i = 0; i < 8;i++){
