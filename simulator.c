@@ -79,11 +79,14 @@ static unsigned char fetch(unsigned char *mnemonic){
 		/*immediate code length*/
 		length = length + get_imme_length(code);
 	} else if (code == 0x90) {
+		length = 1;
 	} else if (code == 0x55) {
 		length = 1;
 	} else if (code == 0x48) {
 		length = 1;
-	} else if (code == 0x5d) {
+	} else if (code == 0x5D) {
+		length = 1;
+	} else if (code == 0xC3) {
 		length = 1;
 	}
 
@@ -380,10 +383,15 @@ static void execute(unsigned char *mnemonic) {
 	} else if (*mnemonic == 0x48) {
 		printf("dec 48\n");
 		cpu_reg.g_reg.eax--;
-	} else if (*mnemonic == 0x5d) {
-		printf("pop 5d\n");
+	} else if (*mnemonic == 0x5D) {
+		printf("pop 5D\n");
 		cpu_reg.g_reg.ebp = *(int*)(cpu_reg.g_reg.esp);
 		cpu_reg.g_reg.esp -= sizeof(int);
+	} else if (*mnemonic == 0xC3) {
+		printf("ret C3\n");
+//		cpu_reg.g_reg.eip = *(int*)(cpu_reg.g_reg.esp);
+//		cpu_reg.g_reg.esp -= sizeof(int);
+//NIY
 	}
 }
 
