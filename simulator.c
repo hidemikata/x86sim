@@ -88,6 +88,8 @@ static unsigned char fetch(unsigned char *mnemonic){
 		length = 1;
 	} else if (code == 0xC3) {
 		length = 1;
+	} else if (code == 0xE8) {
+		length = 5;
 	}
 
 	/* メインメモリーからプログラムを取り出し */
@@ -392,6 +394,15 @@ static void execute(unsigned char *mnemonic) {
 //		cpu_reg.g_reg.eip = *(int*)(cpu_reg.g_reg.esp);
 //		cpu_reg.g_reg.esp -= sizeof(int);
 //NIY
+	} else if (*mnemonic == 0xE8) {
+		printf("call E8\n");
+		printf("%c", *(mnemonic));
+		printf("%c", *(mnemonic+1));
+		printf("%c", *(mnemonic+2));
+		printf("%c", *(mnemonic+3));
+		printf("%c", *(mnemonic+4));
+		printf("---\n");
+		exit(0);
 	}
 }
 
