@@ -8,6 +8,7 @@ ndisasm -b 32 func4.o
 #include <stdlib.h>
 #include <string.h>
 
+static int mnemonic_to_32bit(unsigned char *mnemonic);
 static void get_mod_rm_reg(unsigned char , unsigned char *,unsigned char *, unsigned char *);
 static unsigned char get_disp_length(unsigned char , unsigned char );
 static void print_out_registor(void);
@@ -73,7 +74,8 @@ static unsigned char fetch(unsigned char *mnemonic){
 	length++;//1byte取り出し分
 
 	//modrmとdispをとりだしを取り出し。
-	if (code == 0x89){
+	if (code == 0x89 ||
+	    code == 0x8b){
 		get_mod_rm_reg(*(main_memory + eip + 1), &MOD, &RM, &REG);//+1はRM/MOD
 		length++;//modrm分
 		disp_len = get_disp_length(MOD, RM);
@@ -104,22 +106,13 @@ static unsigned char fetch(unsigned char *mnemonic){
 		length = 5;
 	} else if (code == 0xbf) {
 		length = 5;
+	} else if (code == 0x01) {
+		length = 2;
 	}
 
 	/* メインメモリーからプログラムを取り出し */
 	memcpy(mnemonic, main_memory + eip, length);
 	
-	/*
-	 * デバッグプリント
-	 */
-// ゴミコード
-//	int i;
-//	printf("mnemonic");
-//	for(i = 0; i < 15;i++){
-//		printf("%d[%x]", i, mnemonic[i]);
-//	}
-//	printf("\n");
-
 	/*eipを移動*/
 	cpu_reg.sp_reg.eip = cpu_reg.sp_reg.eip + length;
 
@@ -280,7 +273,7 @@ static int *get_register_from_MOD_RM(unsigned char *mnemonic, unsigned char MOD,
 	return ret;
 }
 
-
+//REGからレジスターの中に入っている値を取得する関数
 static int get_register_from_REG(unsigned char REG){
 	int ret = 0;
 	switch (REG) {
@@ -312,7 +305,44 @@ static int get_register_from_REG(unsigned char REG){
 			printf("error\n");
 			break;
 	}
-	printf("get_register_from_REG ret = %d\n", ret);
+	printf("get_register_from_REG ret = %d, REG = 0x%x\n", ret, REG);
+	return ret;
+}
+
+
+//REGで指定されるレジスターのアドレスを返す
+static int *get_register_pointer_from_REG(unsigned char REG){
+	int *ret = 0;
+	switch (REG) {
+		case 0x0:
+			ret = &cpu_reg.g_reg.eax;
+			break;
+		case 0x1:
+			ret = &cpu_reg.g_reg.ecx;
+			break;
+		case 0x2:
+			ret = &cpu_reg.g_reg.edx;
+			break;
+		case 0x3:
+			ret = &cpu_reg.g_reg.ebx;
+			break;
+		case 0x4:
+			ret = &cpu_reg.g_reg.esp;
+			break;
+		case 0x5:
+			ret = &cpu_reg.g_reg.ebp;
+			break;
+		case 0x6:
+			ret = &cpu_reg.g_reg.esi;
+			break;
+		case 0x7:                     
+			ret = &cpu_reg.g_reg.edi;
+			break;
+		default:
+			printf("error\n");
+			break;
+	}
+	printf("get_register_from_REG ret = %p, REG = 0x%x\n", ret, REG);
 	return ret;
 }
 
@@ -471,82 +501,75 @@ static void execute(unsigned char *mnemonic) {
 	} else if (*mnemonic == 0xb8) {
 		printf("b8 mov eax xxx\n");
 		printf("[%x]", *(mnemonic));
-		printf("[%x]", *(mnemonic+1));
-		printf("[%x]", *(mnemonic+2));
-		printf("[%x]", *(mnemonic+3));
-		printf("[%x]\n", *(mnemonic+4));
-
-		tmp_1byte = *(mnemonic+4);
-		tmp_32bit |= tmp_1byte;
-		tmp_32bit = tmp_32bit << 8;
-		tmp_1byte = *(mnemonic+3);
-		tmp_32bit |= tmp_1byte;
-		tmp_32bit = tmp_32bit << 8;
-		tmp_1byte = *(mnemonic+2);
-		tmp_32bit |= tmp_1byte;
-		tmp_32bit = tmp_32bit << 8;
-		tmp_1byte = *(mnemonic+1);
-		tmp_32bit |= tmp_1byte;
-//		tmp_32bit = tmp_32bit << 8;//no need
-		printf("tmp_32bit%d\n", tmp_32bit);
-
-		cpu_reg.g_reg.eax = tmp_32bit;
+		cpu_reg.g_reg.eax = mnemonic_to_32bit(mnemonic);;
 	} else if (*mnemonic == 0xbe) {
-		printf("b8 mov esi xxx\n");
+		printf("be mov esi xxx\n");
 		printf("[%x]", *(mnemonic));
-		printf("[%x]", *(mnemonic+1));
-		printf("[%x]", *(mnemonic+2));
-		printf("[%x]", *(mnemonic+3));
-		printf("[%x]\n", *(mnemonic+4));
-
-		tmp_1byte = *(mnemonic+4);
-		tmp_32bit |= tmp_1byte;
-		tmp_32bit = tmp_32bit << 8;
-		tmp_1byte = *(mnemonic+3);
-		tmp_32bit |= tmp_1byte;
-		tmp_32bit = tmp_32bit << 8;
-		tmp_1byte = *(mnemonic+2);
-		tmp_32bit |= tmp_1byte;
-		tmp_32bit = tmp_32bit << 8;
-		tmp_1byte = *(mnemonic+1);
-		tmp_32bit |= tmp_1byte;
-//		tmp_32bit = tmp_32bit << 8;//no need
-
-		cpu_reg.g_reg.esi = tmp_32bit;
+		cpu_reg.g_reg.esi = mnemonic_to_32bit(mnemonic);
 	} else if (*mnemonic == 0xbf) {
-		printf("b8 mov esi xxx\n");
+		printf("bf mov edi xxx\n");
 		printf("[%x]", *(mnemonic));
-		printf("[%x]", *(mnemonic+1));
-		printf("[%x]", *(mnemonic+2));
-		printf("[%x]", *(mnemonic+3));
-		printf("[%x]\n", *(mnemonic+4));
+		cpu_reg.g_reg.edi = mnemonic_to_32bit(mnemonic);
 
-		tmp_1byte = *(mnemonic+4);
-		tmp_32bit |= tmp_1byte;
-		tmp_32bit = tmp_32bit << 8;
-		tmp_1byte = *(mnemonic+3);
-		tmp_32bit |= tmp_1byte;
-		tmp_32bit = tmp_32bit << 8;
-		tmp_1byte = *(mnemonic+2);
-		tmp_32bit |= tmp_1byte;
-		tmp_32bit = tmp_32bit << 8;
-		tmp_1byte = *(mnemonic+1);
-		tmp_32bit |= tmp_1byte;
-//		tmp_32bit = tmp_32bit << 8;//no need
-		printf("tmp_32bit%d\n", tmp_32bit);
+	} else if (*mnemonic == 0x8b) {
+		printf("mov 8b\n");
+		get_mod_rm_reg(*(mnemonic+1), &MOD, &RM, &REG);
 
-		cpu_reg.g_reg.edi = tmp_32bit;
+		reg_register1 = get_register_pointer_from_REG(REG);
+		reg_register2 = get_register_from_MOD_RM(mnemonic, MOD, RM);
+
+		printf("reg_register1 %d\n", reg_register1);
+		printf("reg_register2 %d\n", reg_register2);
+		printf("reg_register1 %d\n", *reg_register1);
+		printf("reg_register2 %d\n", *reg_register2);
+		*reg_register1 = *reg_register2;
+	} else if (*mnemonic == 0x01) {
+		printf("add 01\n");
+		get_mod_rm_reg(*(mnemonic+1), &MOD, &RM, &REG);
+
+		reg_register2 = get_register_from_MOD_RM(mnemonic, MOD, RM);
+		//eax = eax + edx
+		*reg_register2 = *reg_register2 + get_register_from_REG(REG);
+
+		printf("reg_register2 %d\n", *reg_register2);
 
 	} else {
 		printf("unknown opecode [%x]\n", *mnemonic);
 		exit(0);
 	}
 }
+static int mnemonic_to_32bit(unsigned char *mnemonic){
+	int tmp32 = 0;
+	int tmp1byte = 0;
+	printf("[%x]", *(mnemonic+1));
+	printf("[%x]", *(mnemonic+2));
+	printf("[%x]", *(mnemonic+3));
+	printf("[%x]\n", *(mnemonic+4));
+
+	tmp1byte = *(mnemonic+4);
+	tmp32 |= tmp1byte;
+	tmp32 = tmp32 << 8;
+	tmp1byte = *(mnemonic+3);
+	tmp32 |= tmp1byte;
+	tmp32 = tmp32 << 8;
+	tmp1byte = *(mnemonic+2);
+	tmp32 |= tmp1byte;
+	tmp32 = tmp32 << 8;
+	tmp1byte = *(mnemonic+1);
+	tmp32 |= tmp1byte;
+//	tmp32 = tmp32 << 8;//no need
+
+	printf("tmp32%d\n", tmp32);
+	return tmp32;
+}
+
+
+
 //leave命令のある場合の命令が実行できるようにする。
 //func5を実装中
-８ｂを実装すること。
-あと、beとかbfの命令をリファクタする
-それからleave命令。
+//８ｂを実装すること。
+//あと、beとかbfの命令をリファクタする
+//それからleave命令。
 
 static void print_mnemonic(unsigned char *mn){
 	int i;
