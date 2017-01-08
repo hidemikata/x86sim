@@ -26,7 +26,12 @@ typedef struct {
 
 typedef struct {
 	int eip;
-	int eflags;
+	short eflags;
+	//bit flag 
+	//0 CF add/sub で繰り上がり下がりが発生したら１ 1
+	//6 ZF 演算結果が０なら１ 32
+	//7 SF 符号ビット。最上位ビットが１なら１ 64
+	//11 OF オーバーフローフラグ 1024
 } CPU_SP_RGISTER;
 
 typedef struct {
@@ -34,17 +39,7 @@ typedef struct {
 	CPU_SP_RGISTER sp_reg;
 }CPU_REG;
 
-typedef struct {
-	unsigned char code;//ex.mov 89
-	unsigned char length;//byte
-}_OPE_CODE;
-
 CPU_REG cpu_reg = {0};
-
-_OPE_CODE ope_code[] = {
-	{0x89, 1},//2コメはrmmodだと想定。。。
-	{0x83, 1}, 
-};
 
 int debug_esp_counter = 0;
 
@@ -107,6 +102,22 @@ static unsigned char fetch(unsigned char *mnemonic){
 	} else if (code == 0xbf) {
 		length = 5;
 	} else if (code == 0x01) {
+		length = 2;
+	} else if (code == 0xc9) {
+		length = 1;
+	} else if (code == 0x53) {
+		length = 1;
+	} else if (code == 0x5b) {
+		length = 1;
+	} else if (code == 0x50) {
+		length = 1;
+	} else if (code == 0x6a) {
+		length = 2;
+	} else if (code == 0x85) {
+		length = 2;
+	} else if (code == 0x74) {
+		length = 2;
+	} else if (code == 0xeb) {
 		length = 2;
 	}
 
@@ -249,10 +260,10 @@ static int *get_register_from_MOD_RM(unsigned char *mnemonic, unsigned char MOD,
 			case 0x2:
 				ret = &cpu_reg.g_reg.edx;
 				break;
-			case 0x4:
+			case 0x3:
 				ret = &cpu_reg.g_reg.ebx;
 				break;
-			case 0x3:
+			case 0x4:
 				ret = &cpu_reg.g_reg.esp;
 				break;
 			case 0x5:
@@ -414,35 +425,85 @@ static void execute(unsigned char *mnemonic) {
 	} else if (*mnemonic == 0x83) {
 		printf("add or sub 83\n");
 		//opecode1byte modrm1byte disp VARbyte
-		int immediate = 1;
+		int immediate = 0;
 		get_mod_rm_reg(*(mnemonic+1), &MOD, &RM, &REG);
 		if(MOD == 1){//0x01
-			immediate = *(mnemonic+3);
+			immediate = (char)*(mnemonic+3);
 		} else if (MOD == 2){//0x10
-			immediate =  *(mnemonic+6);
+			immediate = (char)*(mnemonic+6);
+		} else if (MOD == 3){//0x11
+			immediate = (char)*(mnemonic+2);
 		}
+		printf("immediate(%d)\n", immediate);
 		//get_register_from_MODで上書きする場所を取得
 		reg_register1 = get_register_from_MOD_RM(mnemonic, MOD, RM);
 		printf("reg_register1 %x\n", reg_register1);
+
+		//フラグの設定
+		cpu_reg.sp_reg.eflags = 0;
+		printf("reg1(%d),imm(%d) eflags(0x%x)\n",
+			*reg_register1,immediate, cpu_reg.sp_reg.eflags);
+		if (*reg_register1 == immediate) {
+			cpu_reg.sp_reg.eflags |= 0x20;//32
+		}
+		if (*reg_register1 < immediate) {
+			cpu_reg.sp_reg.eflags |= 0x40;//64
+		}
+		if (*reg_register1 == -2147483648 && immediate) {
+			cpu_reg.sp_reg.eflags |= 0x400;//1024
+		}
+
+		//CFがどういう時に設定されるべきなのかよくわからないので実装していない。
+		printf("reg1(%d),imm(%d) eflags(0x%x)\n",
+			*reg_register1,immediate, cpu_reg.sp_reg.eflags);
 		if (REG == 0) {
+			//add
 			//immediate codeを書き込み
 			printf("add REG(%d)\n", REG);
 			*reg_register1  = *reg_register1 + immediate;
-		} else {
+		} else if (REG == 5) {
+			//sub
 			//REG == 5 sub
 			printf("sub REG(%d)\n", REG);
 			*reg_register1  = *reg_register1 - immediate;
+		} else if(REG == 7){
+		printf("cmp REG(%d)\n", REG);
+			//cmp
+	
+		} else {
+			printf("0x83 error no match REG(%d)\n",REG);
+			exit(0);
 		}
 		printf("%p %d\n", reg_register1, *reg_register1);
 	} else if (*mnemonic == 0x90) {
 		printf("nop 90\n");
 	} else if (*mnemonic == 0x55) {
-
 		printf("55 push ebp\n");
 		cpu_reg.g_reg.esp -= sizeof(int);
 		(*(int*)(cpu_reg.g_reg.esp)) = cpu_reg.g_reg.ebp;
 		debug_esp_counter++;
-		printf("STACK PUSH!! %d\n", cpu_reg.g_reg.ebp);
+		printf("STACK PUSH!! ebp%d\n", cpu_reg.g_reg.ebp);
+	} else if (*mnemonic == 0x50) {
+		printf("50 push eax\n");
+		cpu_reg.g_reg.esp -= sizeof(int);
+		(*(int*)(cpu_reg.g_reg.esp)) = cpu_reg.g_reg.eax;
+		debug_esp_counter++;
+		printf("STACK PUSH!! eax%d\n", cpu_reg.g_reg.eax);
+	} else if (*mnemonic == 0x53) {
+		printf("53 push ebx\n");
+		cpu_reg.g_reg.esp -= sizeof(int);
+		(*(int*)(cpu_reg.g_reg.esp)) = cpu_reg.g_reg.ebx;
+		debug_esp_counter++;
+		printf("STACK PUSH!! ebx%d\n", cpu_reg.g_reg.ebx);
+
+	} else if (*mnemonic == 0x6a) {
+		printf("6a push imm\n");
+		int immediate = 0;
+		cpu_reg.g_reg.esp -= sizeof(int);
+		immediate =  (char)*(mnemonic+1);
+		(*(int*)(cpu_reg.g_reg.esp)) = immediate;
+		debug_esp_counter++;
+		printf("STACK PUSH!! imm%d\n", immediate);
 
 	} else if (*mnemonic == 0x48) {
 		printf("48 dec eax\n");
@@ -453,7 +514,15 @@ static void execute(unsigned char *mnemonic) {
 		cpu_reg.g_reg.ebp = *(int*)(cpu_reg.g_reg.esp);
 		cpu_reg.g_reg.esp += sizeof(int);
 		debug_esp_counter--;
-		printf("STACK POP!! %d\n", cpu_reg.g_reg.ebp);
+		printf("STACK POP ebp!! %d\n", cpu_reg.g_reg.ebp);
+
+	} else if (*mnemonic == 0x5b) {
+		printf("pop 5B\n");
+		cpu_reg.g_reg.ebx = *(int*)(cpu_reg.g_reg.esp);
+		cpu_reg.g_reg.esp += sizeof(int);
+		debug_esp_counter--;
+		printf("STACK POP ebx!! %d\n", cpu_reg.g_reg.ebx);
+
 
 	} else if (*mnemonic == 0xC3) {
 		printf("ret C3\n");
@@ -533,11 +602,44 @@ static void execute(unsigned char *mnemonic) {
 
 		printf("reg_register2 %d\n", *reg_register2);
 
+	} else if (*mnemonic == 0xc9) {
+		printf("c9\n mov esp ebp\n");
+		cpu_reg.g_reg.esp = cpu_reg.g_reg.ebp;
+		printf("moved ebp(%d) ebp(%d)\n", cpu_reg.g_reg.esp, cpu_reg.g_reg.ebp);
+
+		printf("c9 pop ebp\n");
+		cpu_reg.g_reg.ebp = *(int*)(cpu_reg.g_reg.esp);
+		cpu_reg.g_reg.esp += sizeof(int);
+		debug_esp_counter--;
+		printf("poped ebp(%d) ebp(%d)\n", cpu_reg.g_reg.esp, cpu_reg.g_reg.ebp);
+	} else if (*mnemonic == 0x85) {
+		printf("85 test\n");
+		get_mod_rm_reg(*(mnemonic+1), &MOD, &RM, &REG);
+		cpu_reg.sp_reg.eflags = 0;
+		reg_register1 = get_register_from_MOD_RM(mnemonic, MOD, RM);
+		// test rm , REG
+		//andを取る
+		if((*reg_register1 & get_register_from_REG(REG)) == 0){
+			cpu_reg.sp_reg.eflags = 32;
+		}
+		printf("reg_register1%d REG%d\n", *reg_register1, get_register_from_REG(REG));
+		printf("cpu_reg.sp_reg.eflags %d\n", cpu_reg.sp_reg.eflags);
+
+	} else if (*mnemonic == 0x74) {
+		printf("eflags%d eip%d\n", cpu_reg.sp_reg.eflags, cpu_reg.sp_reg.eip);
+		if(cpu_reg.sp_reg.eflags == 32){
+			cpu_reg.sp_reg.eip += (char)*(mnemonic+1);
+			printf("eip%d\n", cpu_reg.sp_reg.eip);
+		}
+	} else if (*mnemonic == 0xeb) {
+		cpu_reg.sp_reg.eip += (char)*(mnemonic+1);
+		printf("eip,%d->%d\n", cpu_reg.sp_reg.eip, (char)*(mnemonic+1));
 	} else {
 		printf("unknown opecode [%x]\n", *mnemonic);
 		exit(0);
 	}
 }
+
 static int mnemonic_to_32bit(unsigned char *mnemonic){
 	int tmp32 = 0;
 	int tmp1byte = 0;
@@ -563,13 +665,6 @@ static int mnemonic_to_32bit(unsigned char *mnemonic){
 	return tmp32;
 }
 
-
-
-//leave命令のある場合の命令が実行できるようにする。
-//func5を実装中
-//８ｂを実装すること。
-//あと、beとかbfの命令をリファクタする
-//それからleave命令。
 
 static void print_mnemonic(unsigned char *mn){
 	int i;
@@ -601,9 +696,14 @@ static void simulator_run(int start_point) {
 			printf("debug_esp_counter is -\n");
 			exit(0);
 		}
+		if(cpu_reg.sp_reg.eip == 0x6a) {
+			printf("end\n");
+			exit(0);
+		}
 	}
 
 }
+けっかがあってるかどうか
 
 static void print_out_registor(){
 	printf("0x%x %d eax(%d)\n",&cpu_reg.g_reg.eax,&cpu_reg.g_reg.eax,cpu_reg.g_reg.eax);
@@ -616,18 +716,18 @@ static void print_out_registor(){
 	printf("0x%x %d ebp(0x%x)\n",&cpu_reg.g_reg.ebp,&cpu_reg.g_reg.ebp,cpu_reg.g_reg.ebp);
 	printf("0x%x %d esi(%d)\n",&cpu_reg.g_reg.esi,&cpu_reg.g_reg.esi,cpu_reg.g_reg.esi);
 	printf("0x%x %d edi(%d)\n",&cpu_reg.g_reg.edi,&cpu_reg.g_reg.edi,cpu_reg.g_reg.edi);
-	printf("0x%x %d eip(%d)\n",&cpu_reg.sp_reg.eip,&cpu_reg.sp_reg.eip,cpu_reg.sp_reg.eip);
 	printf("0x%x %d eip(0x%x)\n",&cpu_reg.sp_reg.eip,&cpu_reg.sp_reg.eip,cpu_reg.sp_reg.eip);
 	printf("0x%x %d eflags(%d)\n",&cpu_reg.sp_reg.eflags,&cpu_reg.sp_reg.eflags,cpu_reg.sp_reg.eflags);
 	int ii;
 	printf("num of stack[%d]\n", debug_esp_counter);
 	for(ii = 0; ii < debug_esp_counter;ii++) {
-		printf("[%d]", *((int*)(cpu_reg.g_reg.esp+ii*sizeof(int))));
-	}
-	printf("\n");
-	for(ii = 0; ii < debug_esp_counter;ii++) {
 		printf("[%x]", *((int*)(cpu_reg.g_reg.esp+ii*sizeof(int))));
 	}
+	printf("\n");
+	for(ii = 0; ii < 30;ii++) {
+		printf("[%x]", *((int*)(cpu_reg.g_reg.esp+ii*sizeof(int))));
+	}
+	printf("\n");
 	printf("\n----\n");
 }
 
@@ -639,15 +739,15 @@ int main() {
 	printf("esp initial data %d\n", cpu_reg.g_reg.esp);
 
 	FILE *fp;
-	fp = fopen("func5.o","rb");
+	fp = fopen("fibo.o","rb");
 
 	//ファイルfpからsizeバイトのデータをn個読み込み、bufに格納します。
 	//ファイル位置指示子を読み込んだデータバイト分進めます。
-	fread(main_memory,0x30+1,1,fp);//10,1 アドレス＋１
+	fread(main_memory,0x6a+1,1,fp);//10,1 アドレス＋１
 
 	int i = 0;
 
-	for(i = 0; i <= 0x30;i++){
+	for(i = 0; i <= 0x6a;i++){
 		printf("%x\n", main_memory[i]);
 	}
 
@@ -655,7 +755,7 @@ int main() {
 
 
 
-	simulator_run(0x14);
+	simulator_run(0x50);
 
 	return 0;
 }
