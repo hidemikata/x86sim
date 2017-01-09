@@ -1,12 +1,15 @@
 /*
-gcc -Wl,--entry=func,--oformat=binary -nostdlib -fno-asynchronous-unwind-tables -o func3.o func3.c
+gcc -Wl,--entry=func,--oformat=binary -nostdlib -fno-asynchronous-unwind-tables -m32 -o func3.o func3.c
 ndisasm -b 32 func4.o
-*/
 
+*/
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define MEM_SIZE 0x100
+#define STACK_SIZE 0x800
 
 static int mnemonic_to_32bit(unsigned char *mnemonic);
 static void get_mod_rm_reg(unsigned char , unsigned char *,unsigned char *, unsigned char *);
@@ -40,11 +43,9 @@ typedef struct {
 }CPU_REG;
 
 CPU_REG cpu_reg = {0};
-
-int debug_esp_counter = 0;
-
-unsigned char main_memory_stack[2048] = {0};
-unsigned char main_memory[8] = {0};
+unsigned char main_memory_stack[STACK_SIZE] = {0};
+unsigned char main_memory[MEM_SIZE] = {0};
+int stack_init_point = 0;
 
 
 /* immediate codeのバイト数を返す。byte */
@@ -53,6 +54,7 @@ static unsigned char get_imme_length(unsigned char code){
 		return 1;
 	}
 }
+
 /*メインメモリから命令を取り出す*/
 static unsigned char fetch(unsigned char *mnemonic){
 	unsigned char code = 0;
@@ -137,7 +139,7 @@ static int *get_register_from_MOD_RM(unsigned char *mnemonic, unsigned char MOD,
 	int disp_32bit = 0;
 
 	int disp_len = get_disp_length(MOD, RM);
-	printf("%d\n", disp_len);
+//	printf("%d\n", disp_len);
 
 	if(disp_len == 1){
 		memcpy(&disp_8bit, mnemonic + 2, 1);//1 1byte
@@ -145,10 +147,10 @@ static int *get_register_from_MOD_RM(unsigned char *mnemonic, unsigned char MOD,
 		memcpy(&disp_32bit, mnemonic + 2, 4);//4 1byte
 		//エンディアン変換がいるかも 
 	}
-	printf("disp32 = %d\n", disp_32bit);
-	printf("disp32 = 0x%x\n", disp_32bit);
-	printf("disp8 = %d\n", disp_8bit);
-	printf("disp8 = 0x%x\n", disp_8bit);
+//	printf("disp32 = %d\n", disp_32bit);
+//	printf("disp32 = 0x%x\n", disp_32bit);
+//	printf("disp8 = %d\n", disp_8bit);
+//	printf("disp8 = 0x%x\n", disp_8bit);
 
 	int *ret = NULL;
 
@@ -367,9 +369,9 @@ static void get_mod_rm_reg(unsigned char mod_opeland, unsigned char *MOD,
 	unsigned char REG_mod = mod_opeland << 2;
 	*REG = REG_mod >> 5;
 
-	printf("MOD=%d\n", *MOD);
-	printf("RM=%d\n", *RM);
-	printf("REG=%d\n", *REG);
+//	printf("MOD=%d\n", *MOD);
+//	printf("RM=%d\n", *RM);
+//	printf("REG=%d\n", *REG);
 }
 static unsigned char get_disp_length(unsigned char MOD, unsigned char RM){
 	char ret = 0;
@@ -468,8 +470,7 @@ static void execute(unsigned char *mnemonic) {
 			*reg_register1  = *reg_register1 - immediate;
 		} else if(REG == 7){
 		printf("cmp REG(%d)\n", REG);
-			//cmp
-	
+			//cmp nothing to do 
 		} else {
 			printf("0x83 error no match REG(%d)\n",REG);
 			exit(0);
@@ -481,19 +482,16 @@ static void execute(unsigned char *mnemonic) {
 		printf("55 push ebp\n");
 		cpu_reg.g_reg.esp -= sizeof(int);
 		(*(int*)(cpu_reg.g_reg.esp)) = cpu_reg.g_reg.ebp;
-		debug_esp_counter++;
 		printf("STACK PUSH!! ebp%d\n", cpu_reg.g_reg.ebp);
 	} else if (*mnemonic == 0x50) {
 		printf("50 push eax\n");
 		cpu_reg.g_reg.esp -= sizeof(int);
 		(*(int*)(cpu_reg.g_reg.esp)) = cpu_reg.g_reg.eax;
-		debug_esp_counter++;
 		printf("STACK PUSH!! eax%d\n", cpu_reg.g_reg.eax);
 	} else if (*mnemonic == 0x53) {
 		printf("53 push ebx\n");
 		cpu_reg.g_reg.esp -= sizeof(int);
 		(*(int*)(cpu_reg.g_reg.esp)) = cpu_reg.g_reg.ebx;
-		debug_esp_counter++;
 		printf("STACK PUSH!! ebx%d\n", cpu_reg.g_reg.ebx);
 
 	} else if (*mnemonic == 0x6a) {
@@ -502,7 +500,6 @@ static void execute(unsigned char *mnemonic) {
 		cpu_reg.g_reg.esp -= sizeof(int);
 		immediate =  (char)*(mnemonic+1);
 		(*(int*)(cpu_reg.g_reg.esp)) = immediate;
-		debug_esp_counter++;
 		printf("STACK PUSH!! imm%d\n", immediate);
 
 	} else if (*mnemonic == 0x48) {
@@ -513,14 +510,12 @@ static void execute(unsigned char *mnemonic) {
 		printf("pop 5D\n");
 		cpu_reg.g_reg.ebp = *(int*)(cpu_reg.g_reg.esp);
 		cpu_reg.g_reg.esp += sizeof(int);
-		debug_esp_counter--;
 		printf("STACK POP ebp!! %d\n", cpu_reg.g_reg.ebp);
 
 	} else if (*mnemonic == 0x5b) {
 		printf("pop 5B\n");
 		cpu_reg.g_reg.ebx = *(int*)(cpu_reg.g_reg.esp);
 		cpu_reg.g_reg.esp += sizeof(int);
-		debug_esp_counter--;
 		printf("STACK POP ebx!! %d\n", cpu_reg.g_reg.ebx);
 
 
@@ -528,14 +523,12 @@ static void execute(unsigned char *mnemonic) {
 		printf("ret C3\n");
 		cpu_reg.sp_reg.eip = *(int*)(cpu_reg.g_reg.esp);
 		cpu_reg.g_reg.esp += sizeof(int);
-		debug_esp_counter--;
 		printf("STACK POP on ret!! %d\n", cpu_reg.sp_reg.eip);
 
 	} else if (*mnemonic == 0xE8) {
 		printf("call E8\n");
 		cpu_reg.g_reg.esp -= sizeof(int);
 		*(int*)(cpu_reg.g_reg.esp) = cpu_reg.sp_reg.eip;
-		debug_esp_counter++;
 		printf("STACK PUSH address !! %d\n", *(int*)(cpu_reg.g_reg.esp));
 
 		printf("call E8\n");
@@ -587,8 +580,6 @@ static void execute(unsigned char *mnemonic) {
 		reg_register1 = get_register_pointer_from_REG(REG);
 		reg_register2 = get_register_from_MOD_RM(mnemonic, MOD, RM);
 
-		printf("reg_register1 %d\n", reg_register1);
-		printf("reg_register2 %d\n", reg_register2);
 		printf("reg_register1 %d\n", *reg_register1);
 		printf("reg_register2 %d\n", *reg_register2);
 		*reg_register1 = *reg_register2;
@@ -603,14 +594,13 @@ static void execute(unsigned char *mnemonic) {
 		printf("reg_register2 %d\n", *reg_register2);
 
 	} else if (*mnemonic == 0xc9) {
-		printf("c9\n mov esp ebp\n");
+		printf("c9 mov esp ebp\n");
 		cpu_reg.g_reg.esp = cpu_reg.g_reg.ebp;
 		printf("moved ebp(%d) ebp(%d)\n", cpu_reg.g_reg.esp, cpu_reg.g_reg.ebp);
 
 		printf("c9 pop ebp\n");
 		cpu_reg.g_reg.ebp = *(int*)(cpu_reg.g_reg.esp);
 		cpu_reg.g_reg.esp += sizeof(int);
-		debug_esp_counter--;
 		printf("poped ebp(%d) ebp(%d)\n", cpu_reg.g_reg.esp, cpu_reg.g_reg.ebp);
 	} else if (*mnemonic == 0x85) {
 		printf("85 test\n");
@@ -618,7 +608,6 @@ static void execute(unsigned char *mnemonic) {
 		cpu_reg.sp_reg.eflags = 0;
 		reg_register1 = get_register_from_MOD_RM(mnemonic, MOD, RM);
 		// test rm , REG
-		//andを取る
 		if((*reg_register1 & get_register_from_REG(REG)) == 0){
 			cpu_reg.sp_reg.eflags = 32;
 		}
@@ -659,7 +648,6 @@ static int mnemonic_to_32bit(unsigned char *mnemonic){
 	tmp32 = tmp32 << 8;
 	tmp1byte = *(mnemonic+1);
 	tmp32 |= tmp1byte;
-//	tmp32 = tmp32 << 8;//no need
 
 	printf("tmp32%d\n", tmp32);
 	return tmp32;
@@ -685,47 +673,49 @@ static void simulator_run(int start_point) {
 	int length;
 	print_out_registor();
 	for (i = 0;;) {
-		getchar();
+//		getchar();
 		memset(mnemonic, 0, 15);
 		length = fetch(mnemonic);
 		printf("length%d\n", length);
 		print_mnemonic(mnemonic);
 		execute(mnemonic);
 		print_out_registor();
-		if (debug_esp_counter < 0) {
-			printf("debug_esp_counter is -\n");
-			exit(0);
-		}
-		if(cpu_reg.sp_reg.eip == 0x6a) {
+		printf("%x %x\n",stack_init_point, cpu_reg.g_reg.esp);
+		if(stack_init_point == (int*)cpu_reg.g_reg.esp) {
 			printf("end\n");
 			exit(0);
 		}
+		if(cpu_reg.sp_reg.eip == 0x6a) {
+			printf("2end\n");
+			exit(0);
+		}
 	}
-
 }
-けっかがあってるかどうか
+
+static long get_file_size(FILE *fp){
+	long ret;
+	fseek(fp, 0, SEEK_END);
+	ret = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	return ret;
+}
 
 static void print_out_registor(){
-	printf("0x%x %d eax(%d)\n",&cpu_reg.g_reg.eax,&cpu_reg.g_reg.eax,cpu_reg.g_reg.eax);
-	printf("0x%x %d ecx(%d)\n",&cpu_reg.g_reg.ecx,&cpu_reg.g_reg.ecx,cpu_reg.g_reg.ecx);
-	printf("0x%x %d edx(%d)\n",&cpu_reg.g_reg.edx,&cpu_reg.g_reg.edx,cpu_reg.g_reg.edx);
-	printf("0x%x %d ebx(%d)\n",&cpu_reg.g_reg.ebx,&cpu_reg.g_reg.ebx,cpu_reg.g_reg.ebx);
-	printf("0x%x %d esp(%d)\n",&cpu_reg.g_reg.esp,&cpu_reg.g_reg.esp,cpu_reg.g_reg.esp);
-	printf("0x%x %d esp(0x%x)\n",&cpu_reg.g_reg.esp,&cpu_reg.g_reg.esp,cpu_reg.g_reg.esp);
-	printf("0x%x %d ebp(%d)\n",&cpu_reg.g_reg.ebp,&cpu_reg.g_reg.ebp,cpu_reg.g_reg.ebp);
-	printf("0x%x %d ebp(0x%x)\n",&cpu_reg.g_reg.ebp,&cpu_reg.g_reg.ebp,cpu_reg.g_reg.ebp);
-	printf("0x%x %d esi(%d)\n",&cpu_reg.g_reg.esi,&cpu_reg.g_reg.esi,cpu_reg.g_reg.esi);
-	printf("0x%x %d edi(%d)\n",&cpu_reg.g_reg.edi,&cpu_reg.g_reg.edi,cpu_reg.g_reg.edi);
-	printf("0x%x %d eip(0x%x)\n",&cpu_reg.sp_reg.eip,&cpu_reg.sp_reg.eip,cpu_reg.sp_reg.eip);
-	printf("0x%x %d eflags(%d)\n",&cpu_reg.sp_reg.eflags,&cpu_reg.sp_reg.eflags,cpu_reg.sp_reg.eflags);
-	int ii;
-	printf("num of stack[%d]\n", debug_esp_counter);
-	for(ii = 0; ii < debug_esp_counter;ii++) {
-		printf("[%x]", *((int*)(cpu_reg.g_reg.esp+ii*sizeof(int))));
-	}
-	printf("\n");
-	for(ii = 0; ii < 30;ii++) {
-		printf("[%x]", *((int*)(cpu_reg.g_reg.esp+ii*sizeof(int))));
+	printf("%p eax(%d)\t\t",&cpu_reg.g_reg.eax,cpu_reg.g_reg.eax);
+	printf("%p ecx(%d)\n",&cpu_reg.g_reg.ecx,cpu_reg.g_reg.ecx);
+	printf("%p edx(%d)\t\t",&cpu_reg.g_reg.edx,cpu_reg.g_reg.edx);
+	printf("%p ebx(%d)\n",&cpu_reg.g_reg.ebx,cpu_reg.g_reg.ebx);
+	printf("%p esp(%d)\t",&cpu_reg.g_reg.esp,cpu_reg.g_reg.esp);
+	printf("%p esp(0x%x)\n",&cpu_reg.g_reg.esp,cpu_reg.g_reg.esp);
+	printf("%p ebp(%d)\t",&cpu_reg.g_reg.ebp,cpu_reg.g_reg.ebp);
+	printf("%p ebp(0x%x)\n",&cpu_reg.g_reg.ebp,cpu_reg.g_reg.ebp);
+	printf("%p esi(%d)\t\t",&cpu_reg.g_reg.esi,cpu_reg.g_reg.esi);
+	printf("%p edi(%d)\n",&cpu_reg.g_reg.edi,cpu_reg.g_reg.edi);
+	printf("%p eip(0x%x)\t",&cpu_reg.sp_reg.eip,cpu_reg.sp_reg.eip);
+	printf("%p eflags(%d)\n",&cpu_reg.sp_reg.eflags,cpu_reg.sp_reg.eflags);
+	int i;
+	for(i = 0;(int*)(cpu_reg.g_reg.esp + i * sizeof(int)) != stack_init_point;i++) {
+		printf("[%x]", *((int*)(cpu_reg.g_reg.esp + i * sizeof(int))));
 	}
 	printf("\n");
 	printf("\n----\n");
@@ -734,44 +724,29 @@ static void print_out_registor(){
 int main() {
 	/*espを適当なところに設定
 	グローバル領域で代入できないのでしかたなくここでやる*/
-	cpu_reg.g_reg.esp = &main_memory_stack[1024];
-	debug_esp_counter = 0;
-	printf("esp initial data %d\n", cpu_reg.g_reg.esp);
+	cpu_reg.g_reg.esp = &main_memory_stack[2048];
+	stack_init_point = (int*)cpu_reg.g_reg.esp;
 
 	FILE *fp;
 	fp = fopen("fibo.o","rb");
 
-	//ファイルfpからsizeバイトのデータをn個読み込み、bufに格納します。
-	//ファイル位置指示子を読み込んだデータバイト分進めます。
-	fread(main_memory,0x6a+1,1,fp);//10,1 アドレス＋１
-
-	int i = 0;
-
-	for(i = 0; i <= 0x6a;i++){
-		printf("%x\n", main_memory[i]);
+	long file_size = get_file_size(fp);
+	
+	if (MEM_SIZE < file_size){
+		printf("file size over\n");
+		exit(0);
 	}
 
+	fread(main_memory,file_size,1,fp);
+	int i;
+	for(i = 0; i < file_size;i++){
+		printf("%x,", main_memory[i]);
+	}
+	printf("\n");
 	fclose(fp);
-
-
 
 	simulator_run(0x50);
 
 	return 0;
 }
 
-
-
-/*
-add 8345FC01
-dec 836DFC01
-4    5    F    C    0    1
-0100 0101 1111 1100 0000 0001
-
-6    D    F    C    0    1
-0110 1101 1111 1100 0000 0001
-
-  00 0
-  10 1
-
-*/
