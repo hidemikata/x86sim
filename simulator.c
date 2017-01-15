@@ -2,6 +2,7 @@
 gcc -Wl,--entry=func,--oformat=binary -nostdlib -fno-asynchronous-unwind-tables -m32 -o func3.o func3.c
 ndisasm -b 32 func4.o
 
+mac だとgcc -m32 simulator.c
 */
 
 #include <stdio.h>
